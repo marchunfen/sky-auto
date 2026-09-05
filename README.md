@@ -55,5 +55,6 @@ sky-auto/
 
 本项目仅作为技术学习与演示。请在遵守光遇游戏《服务条款》及当地法律法规的前提下使用。使用本项目产生的任何后果由使用者自行承担；维护者不对因使用本项目造成的任何直接或间接损失负责。
 
-## 下载安装包
-👉 [点此下载 sky_auto.toolpkg（导入 Operit 用的安装包）](https://github.com/marchunfen/sky-auto/releases/download/v1.0/sky_auto.toolpkg)
+## 下载
+- **Android App 安装包**：👉 [点此下载 app-debug.apk](https://github.com/marchunfen/sky-auto/releases/download/v1.0/app-debug.apk)
+- **ToolPkg 安装包（导入 Operit 用）**：👉 [点此下载 sky_auto.toolpkg](https://github.com/marchunfen/sky-auto/releases/download/v1.0/sky_auto.toolpkg)
