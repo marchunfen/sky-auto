@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "toolpkg_id": "sky_auto",
+  "version": "1.0.0",
+  "main": "main.js",
+  "display_name": {
+    "zh": "光遇自动化",
+    "en": "Sky Auto"
+  },
+  "description": {
+    "zh": "光遇全流程自动化工具：聊天回复、互动动作、环境识别。坐标由使用者通过「光遇坐标配置」界面填写，包内零硬编码像素。",
+    "en": "Sky automation bundle: chat reply, interaction actions, environment look. Coordinates user-filled via the setup UI; no hardcoded pixels."
+  },
+  "enabled_by_default": false,
+  "subpackages": [
+    {
+      "id": "sky_core",
+      "entry": "packages/sky_auto.js"
+    }
+  ]
+}

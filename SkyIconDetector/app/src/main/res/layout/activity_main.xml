@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="光遇互动图标实时识别"
+        android:textSize="20sp"
+        android:textStyle="bold"
+        android:gravity="center"
+        android:paddingBottom="8dp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="检测动作：牵手 / 拥抱 / 碰拳 / 击掌 / 背背 / 摸摸头 / 坐下 等 18 类"
+        android:textSize="14sp"
+        android:gravity="center"
+        android:paddingBottom="16dp" />
+
+    <Button
+        android:id="@+id/btn_toggle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="开始检测"
+        android:textSize="18sp" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/btn_clear"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="清理截图"
+            android:textSize="14sp"
+            android:layout_marginEnd="4dp" />
+
+        <Button
+            android:id="@+id/btn_clear_log"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="清理日志"
+            android:textSize="14sp"
+            android:layout_marginStart="4dp" />
+
+        <Button
+            android:id="@+id/btn_clear_result"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="清理结果"
+            android:textSize="14sp"
+            android:layout_marginStart="4dp" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/tv_status"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="未开始"
+        android:textSize="16sp"
+        android:paddingTop="12dp"
+        android:paddingBottom="8dp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="检测结果:"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        android:paddingBottom="4dp" />
+
+    <ScrollView
+        android:id="@+id/scroll_results"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <TextView
+            android:id="@+id/tv_results"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text=""
+            android:textSize="15sp"
+            android:fontFamily="monospace" />
+    </ScrollView>
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="运行日志:"
+        android:textSize="14sp"
+        android:textStyle="bold"
+        android:paddingTop="8dp"
+        android:paddingBottom="2dp" />
+
+    <ScrollView
+        android:id="@+id/scroll_log"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="0.8"
+        android:background="#F0F0F0">
+
+        <TextView
+            android:id="@+id/tv_log"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="等待启动...\n"
+            android:textSize="11sp"
+            android:fontFamily="monospace"
+            android:padding="4dp" />
+    </ScrollView>
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="提示：截图存 相册/SkyDetector/（保留30张），日志存 下载/SkyDetector/log.txt（保留200行），均可一键清理。"
+        android:textSize="12sp"
+        android:textColor="#888888"
+        android:paddingTop="8dp" />
+
+</LinearLayout>

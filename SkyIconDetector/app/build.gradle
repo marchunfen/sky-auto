@@ -1,0 +1,48 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.sky.icondetector'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.sky.icondetector"
+        minSdk 24
+        targetSdk 34
+        versionCode 1
+        versionName "1.0"
+
+        ndk {
+            abiFilters 'armeabi-v7a', 'arm64-v8a'
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+    
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+
+    sourceSets {
+        main {
+            jniLibs.srcDirs = ['libs']
+        }
+    }
+}
+
+dependencies {
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'com.google.android.material:material:1.9.0'
+    implementation 'com.microsoft.onnxruntime:onnxruntime-android:1.17.1'
+    // Shizuku: 以 adb 权限执行系统截图指令
+    // 注意: 13.x 将 newProcess 改为 private，降级到 12.2.0 以使用公开的进程 API
+    implementation 'dev.rikka.shizuku:api:12.2.0'
+    implementation 'dev.rikka.shizuku:provider:12.2.0'
+}
