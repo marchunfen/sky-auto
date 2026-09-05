@@ -49,7 +49,7 @@
       },
       "parameters": [
         { "name": "type", "description": { "zh": "active（主动/跟随）或 accept（被动）。", "en": "active or accept." }, "type": "string", "required": true },
-        { "name": "icon_name", "description": { "zh": "动作图标名，例如 拥抱/牵手/击掌/背背。", "en": "Icon name, e.g. hug/handshake/high-five." }, "type": "string", "required": true },
+        { "name": "icon_name", "description": { "zh": "动作图标名，例如 拥抱/牵手/击掌/背背。支持口语别名（拉手/抱抱/贴贴等），会自动归一化到标准名；也可用配置 action_aliases 自定义映射。", "en": "Icon name, e.g. hug/handshake/high-five. Colloquial aliases are auto-normalized to standard names." }, "type": "string", "required": true },
         { "name": "level", "description": { "zh": "动作等级 1-4：1=单击；2/3/4=长按（内建时长 500/750/1100ms）。", "en": "Level 1-4: 1=tap; 2/3/4=longPress (built-in 500/750/1100ms)." }, "type": "number", "required": false }
       ]
     },
@@ -287,8 +287,10 @@ const SkyAuto = (function () {
       'flip': {},
       'max_flip': 4,
       'sky_result_dir': DEFAULT_RESULT_DIR,
-      'poll_interval_ms': 1000,
+      'poll_interval_ms': 2000, // 【fixedP】轮询间隔调为2s（今今 2026-09-06：读屏频率1s太快，定2s）
       'interact_keywords': ['抱抱', '拥抱', '牵手', '拉手', '击掌', '背背', '摸头'],
+      // 【fixedM】动作名称自定义映射（口语->标准名），UI「动作名称映射」可填；优先于内置别名表
+      'action_aliases': {},
       // 聊天归属白名单（自己+朋友；用于归属标注与去重，名单外/陌生人忽略，白名单内用户消息必投递）
       'known_names': [],
       // 坐标偏差自校准：tap = 原始坐标 × scale + offset（默认恒等，未校准/无偏差设备不受影响）
@@ -522,7 +524,7 @@ const SkyAuto = (function () {
     return String(OPERIT_CLEAN_ON_EXIT_DIR);
   }
 
-  // 2026-09-05 实测指示：发送时读屏完全让路——文件级互斥标记（跨进程可靠）。
+  // 2026-09-05 今今指示：发送时读屏完全让路——文件级互斥标记（跨进程可靠）。
   // sky_send_text 执行期间写此标记；循环每轮读屏前检查，存在则整轮跳过（不读屏、不投递）。
   const SEND_ACTIVE_FLAG = (function () {
     try { return cleanOnExitDir() + '/sky_send_active.flag'; } catch (e) { return '/data/local/tmp/sky_send_active.flag'; }
@@ -580,6 +582,12 @@ const SkyAuto = (function () {
     // 去掉所有非数字后拼接为单调递增的序列（20260903_082042 -> 20260903082042），可直接比较。
     const digits = String(name == null ? '' : name).replace(/\D/g, '');
     return digits ? Number(digits) : null;
+  }
+  // 【fixedN】当前时刻转成 result_YYYYMMDD_HHMMSS.txt 文件名同格式数字（用于 minStamp 比较）
+  function nowStampNum() {
+    const d = new Date();
+    const p = function (n) { return String(n).padStart(2, '0'); };
+    return Number('' + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds()));
   }
   function sortNewestFirst(entries) {
     return entries.slice().sort(function (a, b) {
@@ -644,9 +652,68 @@ const SkyAuto = (function () {
     }
     return out;
   }
-  function matchName(detName, req) {
-    const d = String(detName || '').trim();
-    const r = String(req || '').trim();
+  // ------------------------------------------------------------------
+  // 【2026-09-06 fixedM】动作名称归一化（口语 -> 标准名）
+  // 背景：用户习惯叫法五花八门（拉手/抱抱/贴贴…），而 SkyDetector 图标名是标准名
+  // （牵手/拥抱/碰拳…）；若不做映射，AI 传口语名会找不到图标。
+  // 方案：内置常用别名表 + 配置 action_aliases 可扩展（UI「动作名称映射」里填，用户自定义优先）。
+  // ------------------------------------------------------------------
+  const ACTION_ALIASES = {
+    '牵手': ['拉手', '手拉手', '牵小手', '牵着手', '牵手手', '牵个手', '拉个手', '牵我'],
+    '拥抱': ['抱抱', '抱', '抱一抱', '抱一个', '拥抱一下', '抱一下', '抱抱我', 'hug'],
+    '碰拳': ['碰个拳', '撞拳', '拳头碰拳头', '碰碰拳', '碰拳拳', 'fist bump'],
+    '击掌': ['击个掌', '拍手', '拍拍手', '鼓掌', 'high five', 'highfive', 'give me five', '击掌击掌'],
+    '握手': ['握个手', '握握手', '握手手', '握一下', 'handshake', 'hand shake'],
+    '搭肩': ['搭肩膀', '搭个肩', '揽肩', '勾肩', '搂肩'],
+    '谢幕礼': ['鞠躬', '谢幕', '行礼', '告别礼', '感谢礼', '谢幕鞠躬', 'bow'],
+    '耳语': ['悄悄话', '说悄悄话', '咬耳朵', '说悄悄话吧', 'whisper'],
+    '双人舞': ['跳舞', '双人跳舞', '二人舞', '一起跳舞', 'dance'],
+    '双人旋转舞': ['转圈舞', '旋转舞', '转圈圈', '一起转圈', 'spinning dance'],
+    '默契握手': ['默契击掌', '击掌默契', '默契握', '完美击掌', '默契拍手'],
+    '打闹': ['嬉闹', '打打闹闹', '闹着玩', '玩闹', 'playful'],
+    '熊抱': ['大拥抱', '紧紧抱', '熊抱抱', '大力拥抱', 'big hug'],
+    '公主抱': ['抱起来', '横抱', '公主抱抱', '抱着你', '横着抱','公主抱我'],
+    '背背': ['背', '背我', '背起来', '背一下', '背背乐', '背着你', 'piggyback'],
+    '跟随': ['跟着', '跟着走', '跟着我', 'follow'],
+    '摸摸头': ['摸头', '摸头头', '摸脑袋', '摸一下头', '摸摸', 'rua', 'pat'],
+    '坐下': ['坐', '坐下来', '坐地上', '坐一下', '坐好', 'sit']
+  };
+
+  // 归一化：先精确（标准名/已注册别名），再包含（取命中里最长的已注册词，避免"抱抱"抢"公主抱"）。
+  // 单字词（抱/背/坐）只参与精确匹配，不参与包含匹配（防"踩背"被误翻成"背背"）。
+  // extra = 用户自定义映射（配置 action_aliases，UI 可填），优先于内置表。
+  function normalizeActionName(name, extra) {
+    const n = String(name == null ? '' : name).trim();
+    if (!n) return n;
+    const dict = {};
+    Object.keys(ACTION_ALIASES).forEach(function (std) {
+      dict[std] = std;
+      (ACTION_ALIASES[std] || []).forEach(function (a) { dict[a] = std; });
+    });
+    if (extra && typeof extra === 'object') {
+      Object.keys(extra).forEach(function (k) {
+        const v = String(extra[k] == null ? k : extra[k]).trim();
+        const key = String(k).trim();
+        if (key) { dict[key] = v || key; dict[v] = v || key; }
+      });
+    }
+    // 1) 精确命中
+    if (dict[n]) return dict[n];
+    // 2) 包含命中：取命中最长的已注册词（对应标准名）；单字词跳过（避免误伤）
+    let bestWord = '', bestStd = '';
+    Object.keys(dict).forEach(function (w) {
+      if (w.length < 2) return;
+      if (n.indexOf(w) !== -1 || w.indexOf(n) !== -1) {
+        if (w.length > bestWord.length) { bestWord = w; bestStd = dict[w]; }
+      }
+    });
+    if (bestStd) return bestStd;
+    return n;
+  }
+
+  function matchName(detName, req, extra) {
+    const d = normalizeActionName(String(detName || '').trim(), extra);
+    const r = normalizeActionName(String(req || '').trim(), extra);
     if (!r) return true;
     return d === r || d.indexOf(r) !== -1 || r.indexOf(d) !== -1;
   }
@@ -818,13 +885,13 @@ const SkyAuto = (function () {
 
   // ------------------------------------------------------------------
   // 键盘聚焦判断（纯脚本读屏判断，不烧 token）：
-  // 出现 inputmethod/键盘类节点，或 EditText 已有文本 => 视为输入框已聚焦
-  // ------------------------------------------------------------------
+  // 出现 inputmethod/键盘类节点 => 视为输入框已聚焦
+  // 【2026-09-05 晚修正】不再把"EditText 已有文本"当作聚焦依据——那可能是 Operit 浮窗/输入法
+  // 自带输入框（光遇 Unity 输入框不是原生 EditText，读屏读不到）；误判会跳过弹键盘导致 setText 写错焦点。
   function _looksInputFocused(formatted) {
     const lines = String(formatted || '').split(/\r?\n/);
     for (let i = 0; i < lines.length; i++) {
       if (/inputmethod|KeyView|KeyboardView|\bIME\b/i.test(lines[i])) return true;
-      if (/[Ee]ditText/i.test(lines[i]) && /T:"[^"]+"/.test(lines[i])) return true;
     }
     return false;
   }
@@ -857,27 +924,38 @@ const SkyAuto = (function () {
   }
 
   // 需求A：检测键盘/输入框(EditText)是否已打开（发送前用，不依赖 chatActive 记忆）
+  // 【2026-09-05 晚增强】光遇输入框非原生 EditText；读屏能扫到的 EditText 可能是 Operit 浮窗/IME
+  // 自带输入框。因此"已打开"判定放宽为：存在 EditText 节点 **或** 输入法键盘节点
+  // （inputmethod/KeyView/KeyboardView/IME）——弹起验证时两者任一存在即算已打开。
   async function _inputBoxPresent() {
     let page = null;
     try { page = await _getPageInfo(); } catch (e) { return null; } // null=读屏超时，无法确认
     if (page === null) return null;
     const nodes = extractNodes(page);
+    let hasEdit = false, hasIme = false;
     for (let i = 0; i < nodes.length; i++) {
-      if (/EditText/i.test(nodes[i].className)) return true; // 存在输入框节点 => 视为已打开
+      const cls = String(nodes[i].className || '');
+      if (/EditText/i.test(cls)) hasEdit = true;
+      else if (/inputmethod|KeyView|KeyboardView|\bIME\b/i.test(cls)) hasIme = true;
     }
+    if (hasEdit || hasIme) return true;
     return false;
   }
   // 发送前确保聊天窗/键盘已打开：未打开则双击聊天框弹键盘（不依赖 chatActive）；
   // 弹不起来 -> 返回明确错误「聊天窗未打开」，禁止继续 setText 裸奔
+  // 【2026-09-05 晚 今今+DeepSeek 审阅发现：设计盲区】光遇是 Unity 引擎，聊天输入框非原生
+  // EditText——读屏扫到的 EditText 其实是 Operit 浮窗/输入法 IME 自带输入框；原逻辑"读到 EditText
+  // 即认为键盘已打开→跳过弹键盘→setText 写入错误焦点→点发送键无效"。对策：发送前强制归零——
+  // 先点退键盘（键盘没开也点击，无害），再无条件双击聊天框弹键盘，不依赖 EditText 判断。
   async function _ensureChatWindow(cfg) {
-    const present = await _inputBoxPresent();
-    if (present === true) return { ok: true, popped: false };
+    const backKey = coord(cfg, '退键盘');
+    if (backKey) { await _tap(backKey[0], backKey[1]); await _sleep(300); } // 归零（无害）
     const chatBox = coord(cfg, '聊天框双击');
     if (!chatBox) return { ok: false, error: '缺少坐标配置: 聊天框双击' };
     await _tap(chatBox[0], chatBox[1]);
     await _sleep(1000);
     await _tap(chatBox[0], chatBox[1]);
-    await _sleep(1000); // 等键盘完全展开（仅本次弹起）
+    await _sleep(1200); // 等键盘完全展开（仅本次弹起）
     const after = await _inputBoxPresent();
     if (after !== true) return { ok: false, error: '聊天窗未打开' };
     return { ok: true, popped: true };
@@ -1081,12 +1159,18 @@ const SkyAuto = (function () {
   }
 
   // 翻页后等 SkyDetector 结果文件时间戳变化（识别周期约5s，超时上限）
-  async function _waitResultChange(dir, prev, timeoutMs) {
+  async function _waitResultChange(dir, prev, timeoutMs, minStamp) {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
       const f = await latestResultFile(dir);
       const cur = (f && f.mtime != null) ? f.mtime : (f ? parseFileTime(f.name) : null);
-      if (cur !== null && cur !== prev) return true;
+      if (cur !== null && cur !== prev) {
+        // 【fixedN】minStamp：要求新拍的「拍图时刻（文件名时间戳）」晚于本次 action 执行时刻，
+        // 防止读入 action 执行之前拍的旧画面（SkyDetector 拍图-识别-写文件有延迟，mtime 变化≠拍图更晚）
+        if (minStamp == null) return true;
+        const nameStamp = f ? parseFileTime(f.name) : null;
+        if (nameStamp != null && nameStamp > minStamp) return true;
+      }
       await _sleep(300);
     }
     return false;
@@ -1164,7 +1248,7 @@ const SkyAuto = (function () {
     if (!(await acquireBusyRetry('send', 20))) {
       return { success: false, busy: 'send', error: '其它类别正在操作（互斥），请稍后再试' };
     }
-    // 2026-09-05 实测指示：发送期间置文件标记，循环读屏看到即整轮让路（发送时读屏完全让路）
+    // 2026-09-05 今今指示：发送期间置文件标记，循环读屏看到即整轮让路（发送时读屏完全让路）
     try { await _writeFileText(SEND_ACTIVE_FLAG, String(Date.now())); } catch (e) { /* 忽略 */ }
     try {
       // 【修复2026-09-05 08:19】投递收尾避让：距最近投递 <6s 先等，防撞投递收尾期（Step error）
@@ -1218,9 +1302,12 @@ const SkyAuto = (function () {
     if (!backKey) {
       return { success: false, phase: 'backkey', error: '缺少退键盘坐标（必填）' };
     }
+    // 【fixedN】退键盘改双击（确定性动作）：第一下点退键，间隔后再补一下，确保键盘真退掉
+    await _tap(backKey[0], backKey[1]);
+    await _sleep(600);
     await _tap(backKey[0], backKey[1]);
     await _sleep(300);
-    await _writeRunLog('互动-退键盘 ok'); // 缺陷1：逐段日志定位中断
+    await _writeRunLog('互动-退键盘 ok(双击)'); // 缺陷1：逐段日志定位中断
 
     // 2-3. 读屏找锚点，算出 (X, Y)
     const anchor = await findAnchor();
@@ -1254,7 +1341,7 @@ const SkyAuto = (function () {
         if (!flip) {
           return { success: false, phase: 'flip', error: 'flip 未配置，无法翻页' };
         }
-        // 【BUG-D 修复·经实测确认：翻页前至少等 8 秒（等当前页识别反馈稳定）】
+        // 【BUG-D 修复·今今拍板：翻页前至少等 8 秒（等当前页识别反馈稳定）】
         // 否则 SkyDetector 还在识别当前页时翻页，图标反馈回来页已翻走，永远点不到
         await _sleep(8000); // 等当前页识别反馈稳定（≥8s）
         const det2 = await readDetect({ name: iconName });
@@ -1267,7 +1354,8 @@ const SkyAuto = (function () {
         const prev1 = (before1 && before1.mtime != null) ? before1.mtime : (before1 ? parseFileTime(before1.name) : null);
         await _swipe(flip.sx, flip.sy, flip.ex, flip.ey);
         flipsDone++;
-        await _waitResultChange(dir, prev1, waitResultMs(cfg));
+        // 【fixedN】minStamp=翻页完成时刻：只认「拍图时刻晚于此刻」的新拍，确保读到的图标是翻页后拍的
+        await _waitResultChange(dir, prev1, waitResultMs(cfg), nowStampNum());
       }
     }
 
@@ -1304,16 +1392,21 @@ const SkyAuto = (function () {
     if (!backKey) {
       return { success: false, phase: 'backkey', error: '缺少退键盘坐标（必填）' };
     }
+    // 【fixedN】退键盘改双击（确定性动作）：第一下点退键，间隔后再补一下，确保键盘真退掉
+    await _tap(backKey[0], backKey[1]);
+    await _sleep(600);
     await _tap(backKey[0], backKey[1]);
     await _sleep(300);
-    await _writeRunLog('互动-退键盘 ok'); // 缺陷1：逐段日志定位中断
+    await _writeRunLog('互动-退键盘 ok(双击)'); // 缺陷1：逐段日志定位中断
 
     // J：被动请求等"新一拍落地"再识别（SkyDetector 约5s/拍，按5s拍速设计，上限约7s）；
     // 否则读到的是旧画面（动作栏按钮常被误当请求、真请求3s后才落地），宁可不点。
     const dir = (cfg && cfg.sky_result_dir) || DEFAULT_RESULT_DIR;
     const before = await latestResultFile(dir);
     const prev = (before && before.mtime != null) ? before.mtime : (before ? parseFileTime(before.name) : null);
-    const updated = await _waitResultChange(dir, prev, waitResultMs(cfg));
+    // 【fixedN】minStamp=退键盘完成时刻：只认「拍图时刻晚于此刻」的新拍，确保读到的截图是退键盘后拍的
+    const minStamp = nowStampNum();
+    const updated = await _waitResultChange(dir, prev, waitResultMs(cfg), minStamp);
     if (!updated) {
       await _writeRunLog('互动-accept 超时未检出');
       return { success: false, phase: 'detect', error: 'SkyDetector 结果文件超时未更新（约 7 秒无新拍），已取消点击' };
@@ -1338,8 +1431,7 @@ const SkyAuto = (function () {
   async function sky_action(params) {
     params = params || {};
     const type = String(params.type || '').toLowerCase();
-    const iconName = (params.icon_name != null) ? String(params.icon_name) : null;
-    if (!iconName) return { success: false, error: '缺少参数 icon_name' };
+    if (params.icon_name == null) return { success: false, error: '缺少参数 icon_name' };
     if (!(await acquireBusyRetry('action', 2))) {
       return { success: false, busy: 'action', error: '其它类别正在操作（互斥），请稍后再试' };
     }
@@ -1347,12 +1439,16 @@ const SkyAuto = (function () {
       // 【修复2026-09-05 08:19】投递收尾避让：距最近投递 <6s 先等，防撞投递收尾期（Step error）
       await waitForDeliveryTail();
       const cfg = await loadConfig();
+      // 【fixedM】动作名归一化：口语（拉手/抱抱…）-> 标准名（牵手/拥抱…）；用户自定义映射优先
+      const iconName = normalizeActionName(String(params.icon_name), (cfg && cfg.action_aliases) || {});
       let res;
       if (type === 'active') res = await actionActive(iconName, cfg, params);
       else if (type === 'accept') res = await actionAccept(iconName, cfg, params);
       else return { success: false, error: 'type 必须为 active 或 accept，收到: ' + type };
       // H：互动成功后自动弹键盘（先等动画1s+失败重试1次；弹键失败只记日志，不影响互动结果返回）
       if (res && res.success === true) {
+        // 【fixedO】记录刚完成的互动，供 pollAction 20s 窗口内过滤同图标残留帧
+        _lastInteraction = { name: iconName, doneAt: Date.now() };
         try { await _popKeyboardAfterAction(cfg); } catch (e) { /* 忽略，不影响返回值 */ }
         // 方案Q：占槽工具成功 -> 刷任务信号（last_signal_at），供完成判定兜底
         await signalTaskDone();
@@ -1375,8 +1471,10 @@ const SkyAuto = (function () {
         return { success: false, count: 0, icons: [], message: '未找到 result_*.txt（' + dir + '）' };
       }
       let icons = parseDetect(r.content);
+      // 【fixedM】名称过滤：双方先归一化再匹配（口语/标准名互通；用户自定义映射优先）
+      const aliasExtra = (cfg && cfg.action_aliases) || {};
       if (params.name) {
-        icons = icons.filter(function (ic) { return matchName(ic.name, params.name); });
+        icons = icons.filter(function (ic) { return matchName(ic.name, params.name, aliasExtra); });
       }
       if (icons.length) {
         icons.sort(function (a, b) { return b.conf - a.conf; });
@@ -1584,11 +1682,20 @@ const SkyAuto = (function () {
     // 新图标 = 不在上次集合 & 不在冷却期内（同图标 N 拍内不重复推）
     const now = Date.now();
     const newIcons = [];
+    const aliasExtra = (cfg && cfg.action_aliases) || {}; // 【fixedO】归一化对比用
     for (let i = 0; i < icons.length; i++) {
       const ic = icons[i];
       if (prevSet[ic.name]) continue; // 上次已有 -> 非新
       const lastPush = _pushedIcons[ic.name] || 0;
       if (now - lastPush < _iconDedupWindowMs) continue; // 冷却期同图标不重复推
+      // 【fixedO】互动残留抑制：刚完成的互动图标名，20s 窗口内再检出（动画残留帧）不投递
+      if (_lastInteraction && _lastInteraction.name && (now - _lastInteraction.doneAt) < 20000) {
+        const normIc = normalizeActionName(ic.name, aliasExtra);
+        if (normIc === _lastInteraction.name) {
+          await _writeRunLog('互动残留抑制：检出 ' + ic.name + '（' + _lastInteraction.name + ' 完成 ' + (now - _lastInteraction.doneAt) + 'ms 内，动画残留帧）');
+          continue;
+        }
+      }
       newIcons.push(ic);
     }
     const changed = newIcons.length > 0;
@@ -1731,6 +1838,8 @@ const SkyAuto = (function () {
   let _actionStartTime = null;
   let _pushedIcons = {};
   const _iconDedupWindowMs = 30000;
+  // 【fixedO】互动残留抑制：记录刚完成的互动（标准名+完成时刻），pollAction 20s 窗口内同图标不再投递（动画残留帧误检）
+  let _lastInteraction = null;
   let _lastScreenCheck = 0; // 息屏检测节流
 
   // 需求1：检测屏幕亮灭（dumpsys power 的 mWakefulness）。息屏/灭屏 -> 脚本自动停止（无法靠光遇指令控制）
@@ -2066,9 +2175,9 @@ const SkyAuto = (function () {
     let rounds = 0;
     let timesFed = 0;
     let emptyReadCount = 0; // 需求2：读屏连续空计数（自检诊断）
-    // 消息波次合并投递：攒批次，超 2s 无新消息或满 8 条才投递（2026-09-05 实测：2秒内消息整合成一个包）
+    // 消息波次合并投递：攒批次，超 2s 无新消息或满 8 条才投递（今今 2026-09-05：2秒内消息整合成一个包）
     const BATCH_MAX = 8, BATCH_QUIET_MS = 2000, BATCH_FLUSH_DELAY_MS = 300;
-    // 2026-09-05 实测：光遇消息气泡动画导致同一消息标点变化（测试123 / 测试123. / 测试123...），
+    // 2026-09-05 今今实测：光遇消息气泡动画导致同一消息标点变化（测试123 / 测试123. / 测试123...），
     // 读屏每次变化都当新消息 → 反复投递。归一化去重：去尾部空格/点/省略号后相同视为同一条。
     function normForDedup(t) { return String(t).replace(/[\s.…]+$/, '').trim(); }
     const deliveredNorm = []; // 最近已投递的归一化文本（≥20条修剪）
@@ -2101,7 +2210,7 @@ const SkyAuto = (function () {
             }
           }
         }
-        // 2026-09-05 实测指示：发送时读屏完全让路——检测 send 活跃标记，存在则本轮跳过（不读屏、不投递）
+        // 2026-09-05 今今指示：发送时读屏完全让路——检测 send 活跃标记，存在则本轮跳过（不读屏、不投递）
         try {
           if (await _fileExists(SEND_ACTIVE_FLAG)) {
             if (rounds % 10 === 0) { await _writeRunLog('[' + nowStamp() + '] Round #' + rounds + ' | 发送互斥：读屏让路（sky_send_active标记存在）'); }

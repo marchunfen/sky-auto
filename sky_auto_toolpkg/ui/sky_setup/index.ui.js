@@ -40,6 +40,10 @@ const TEXTS = {
     knownNamesHint: "备注名白名单（自己+朋友），逗号分隔；用于归属标注与去重（同一发送者+同一内容只投一次）。名单外（含陌生人/未备注昵称）一律忽略；白名单内用户消息必投递。多人侧边栏由控制词「开启多人聊天」打开（纯UI），归属同样基于此白名单。",
     labelKnownNames: "白名单（备注名，逗号分隔）",
     knownNamesPlaceholder: "例如：春分,seek,小号",
+    aliasTitle: "动作名称映射 (action_aliases)",
+    aliasHint: "自定义口语映射，格式「口语=标准名」，逗号分隔多个；优先于内置别名表。内置已含：拉手=牵手、抱抱=拥抱 等常见叫法。",
+    labelAliases: "自定义映射（口语=标准名）",
+    aliasesPlaceholder: "例如：贴贴=拥抱,拉拉=牵手",
     calibTitle: "坐标校准 (coord_scale/offset)",
     calibCalibratedPrefix: "已校准：",
     calibNotCalibrated: "未校准（首次使用建议校准）。",
@@ -87,6 +91,10 @@ const TEXTS = {
     knownNamesHint: "Whitelist of remark names (you + friends), comma separated. Used for attribution and dedup (same sender + same content delivered once). Anyone outside (stranger / unremarked nickname) is ignored; whitelist users' messages are always delivered. Multi sidebar opened by control word \"开启多人聊天\" (pure UI); attribution also based on this whitelist.",
     labelKnownNames: "Whitelist (remark names, comma separated)",
     knownNamesPlaceholder: "e.g. 春分,seek,小号",
+    aliasTitle: "Action name mapping (action_aliases)",
+    aliasHint: "Custom colloquial -> standard name mapping, format \"colloquial=standard\", comma separated; takes priority over built-in aliases (e.g. 拉手=牵手, 抱抱=拥抱).",
+    labelAliases: "Custom mapping (colloquial=standard)",
+    aliasesPlaceholder: "e.g. 贴贴=拥抱,拉拉=牵手",
     calibTitle: "Coordinate calibration (coord_scale/offset)",
     calibCalibratedPrefix: "Calibrated: ",
     calibNotCalibrated: "Not calibrated (recommended on first use).",
@@ -260,6 +268,8 @@ exports.default = function Screen(ctx) {
   const offsetActiveState = useStateValue(ctx, "sky-offsetActive", "");
   // 聊天归属白名单 known_names（逗号分隔，daily 模式用；multi 由 AI 用"开启多人聊天"切换）
   const knownNamesState = useStateValue(ctx, "sky-knownNames", "");
+  // 【fixedM】动作名称自定义映射 action_aliases（格式：口语=标准名，逗号分隔多个）
+  const actionAliasesState = useStateValue(ctx, "sky-actionAliases", "");
   // 坐标偏差自校准（scale/offset，默认恒等）
   const calScaleXState = useStateValue(ctx, "sky-calScaleX", "");
   const calScaleYState = useStateValue(ctx, "sky-calScaleY", "");
@@ -305,6 +315,15 @@ exports.default = function Screen(ctx) {
       // 白名单：数组 -> 逗号分隔字符串
       if (Array.isArray(config.known_names) && config.known_names.length) {
         knownNamesState.set(config.known_names.join(","));
+      }
+      // 【fixedM】动作名称映射：对象 -> "口语=标准名,口语=标准名" 字符串
+      if (config.action_aliases && typeof config.action_aliases === 'object') {
+        const pairs = [];
+        Object.keys(config.action_aliases).forEach(function (k) {
+          const v = config.action_aliases[k];
+          if (k && v) pairs.push(k + '=' + v);
+        });
+        if (pairs.length) actionAliasesState.set(pairs.join(','));
       }
       // 坐标校准：scale/offset 回填（保留到2位）
       if (isFinite(Number(config.coord_scale_x))) calScaleXState.set(String(Number(config.coord_scale_x)));
@@ -353,6 +372,17 @@ exports.default = function Screen(ctx) {
       }
       // 聊天归属白名单（逗号分隔输入 -> 数组）
       payload["known_names"] = parseNameList(knownNamesState.value);
+      // 【fixedM】动作名称映射："口语=标准名,口语=标准名" -> 对象
+      const aliasObj = {};
+      String(actionAliasesState.value || '').split(/[,，]/).forEach(function (item) {
+        const idx = item.indexOf('=');
+        if (idx > 0) {
+          const k = item.slice(0, idx).trim();
+          const v = item.slice(idx + 1).trim();
+          if (k && v) aliasObj[k] = v;
+        }
+      });
+      payload["action_aliases"] = aliasObj;
       // 坐标校准：scale/offset（默认恒等 1.0/0.0）；有任一非默认值则视为已校准
       const calSx = parseNum(calScaleXState.value); const calSy = parseNum(calScaleYState.value);
       const calOx = parseNum(calOffsetXState.value); const calOy = parseNum(calOffsetYState.value);
@@ -500,6 +530,29 @@ exports.default = function Screen(ctx) {
           placeholder: T.knownNamesPlaceholder,
           value: knownNamesState.value,
           onValueChange: knownNamesState.set,
+          minLines: 2
+        })
+      ])
+    ]),
+
+    // 【fixedM】动作名称映射（口语=标准名，逗号分隔多个）
+    ctx.UI.Card({ fillMaxWidth: true }, [
+      ctx.UI.Column({ padding: 16, spacing: 10 }, [
+        ctx.UI.Text({
+          text: T.aliasTitle,
+          style: "titleMedium",
+          fontWeight: "bold"
+        }),
+        ctx.UI.Text({
+          text: T.aliasHint,
+          style: "bodySmall",
+          color: "onSurfaceVariant"
+        }),
+        ctx.UI.TextField({
+          label: T.labelAliases,
+          placeholder: T.aliasesPlaceholder,
+          value: actionAliasesState.value,
+          onValueChange: actionAliasesState.set,
           minLines: 2
         })
       ])
