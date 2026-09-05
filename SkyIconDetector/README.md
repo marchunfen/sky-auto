@@ -32,3 +32,5 @@ result_YYYYMMDD_HHMMSS.txt
 ## 许可
 
 本应用随仓库使用**非商用许可证**（见根目录 `LICENSE`）。
+## 下载 App
+👉 [点此下载 app-debug.apk](https://github.com/marchunfen/sky-auto/releases/download/v1.0/app-debug.apk)
