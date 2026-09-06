@@ -287,7 +287,7 @@ const SkyAuto = (function () {
       'flip': {},
       'max_flip': 4,
       'sky_result_dir': DEFAULT_RESULT_DIR,
-      'poll_interval_ms': 2000, // 【fixedP】轮询间隔调为2s（今今 2026-09-06：读屏频率1s太快，定2s）
+      'poll_interval_ms': 1000,
       'interact_keywords': ['抱抱', '拥抱', '牵手', '拉手', '击掌', '背背', '摸头'],
       // 【fixedM】动作名称自定义映射（口语->标准名），UI「动作名称映射」可填；优先于内置别名表
       'action_aliases': {},
@@ -302,7 +302,7 @@ const SkyAuto = (function () {
       // 等待 SkyDetector 结果文件"新拍落地"的窗口（ms）。按最坏拍速设计（拍图+识别约5s+/拍且波动），默认 12s，可配置
       'wait_result_ms': 12000,
       // 方案Q：投递-回复任务队列串行化的超时控制（ms）
-      'task_quiet_ms': 5000,       // 最后动作信号后静默多久视为完成
+      'task_quiet_ms': 1000,       // 最后动作信号后静默多久视为完成（【fixedQ】5000->1000：AI 忘调 sky_task_done 时更快放行）
       'task_timeout_ms': 30000,    // 任务兜底超时（含重投递后）
       'task_redeliver_ms': 10000   // 无任何信号时自动重投递的等待时间
     };
@@ -1120,6 +1120,11 @@ const SkyAuto = (function () {
         : (rec && (rec.content || rec.text || rec.description)) || '';
       const s = String(val || '').trim();
       if (!s) return null;
+      // fixedU：识图模型有时不提取文字，而是输出"图片中的聊天消息文字是/如下…"式图片描述
+      // （带 1|2| 编号、背景/气泡/输入法等画面细节）。这种输出不是消息原文，
+      // 不能作为补全结果——保留读屏原文（宁可截断也不投递假内容）
+      const descMark = /(图片中[的聊]|聊天消息文字[是如]|聊天气泡|视线可及|输入法底部|半透明深色提示框|气泡中)/;
+      if (descMark.test(s)) return null;
       // OCR 结果若以截断前缀开头（去掉尾部 .../…）且更长 -> 视为补全成功
       const prefix = String(truncated).trim().replace(/\.{3,}/, '').replace(/…+$/, '');
       if (prefix && s.indexOf(prefix) === 0 && s.length > String(truncated).trim().length) return s;
@@ -1331,31 +1336,21 @@ const SkyAuto = (function () {
 
     let found = null;
     let flipsDone = 0;
-    for (let i = 0; i <= maxFlip; i++) {
+    for (let i = 0; i < maxFlip; i++) {
+      // 【fixedX·今今方案（2026-09-06）】每页固定等 8 秒再检测（识别反馈稳定 + 新拍图落地）；
+      // 未命中才翻页；翻页后不额外等拍图（下一轮 8 秒等待已覆盖新拍图落地）
+      await _sleep(8000); // 等当前页识别反馈稳定（≥8s）
       const det = await readDetect({ name: iconName }); // 互斥由 sky_action 持有
       if (det.success && det.count) {
         found = det.icons[0];
         break;
       }
-      if (i < maxFlip) {
+      if (i < maxFlip - 1) {
         if (!flip) {
           return { success: false, phase: 'flip', error: 'flip 未配置，无法翻页' };
         }
-        // 【BUG-D 修复·今今拍板：翻页前至少等 8 秒（等当前页识别反馈稳定）】
-        // 否则 SkyDetector 还在识别当前页时翻页，图标反馈回来页已翻走，永远点不到
-        await _sleep(8000); // 等当前页识别反馈稳定（≥8s）
-        const det2 = await readDetect({ name: iconName });
-        if (det2.success && det2.count) {
-          found = det2.icons[0]; // 8秒后当前页识别到图标 -> 不翻页
-          break;
-        }
-        // 仍未命中才翻页；翻页后不需要停顿，直接等新页识别反馈落地（新水印）
-        const before1 = await latestResultFile(dir);
-        const prev1 = (before1 && before1.mtime != null) ? before1.mtime : (before1 ? parseFileTime(before1.name) : null);
         await _swipe(flip.sx, flip.sy, flip.ex, flip.ey);
         flipsDone++;
-        // 【fixedN】minStamp=翻页完成时刻：只认「拍图时刻晚于此刻」的新拍，确保读到的图标是翻页后拍的
-        await _waitResultChange(dir, prev1, waitResultMs(cfg), nowStampNum());
       }
     }
 
@@ -1447,14 +1442,17 @@ const SkyAuto = (function () {
       else return { success: false, error: 'type 必须为 active 或 accept，收到: ' + type };
       // H：互动成功后自动弹键盘（先等动画1s+失败重试1次；弹键失败只记日志，不影响互动结果返回）
       if (res && res.success === true) {
-        // 【fixedO】记录刚完成的互动，供 pollAction 20s 窗口内过滤同图标残留帧
+        // 【fixedO】记录刚完成的互动，供 pollAction 8s 窗口内过滤同图标残留帧
         _lastInteraction = { name: iconName, doneAt: Date.now() };
         try { await _popKeyboardAfterAction(cfg); } catch (e) { /* 忽略，不影响返回值 */ }
-        // 方案Q：占槽工具成功 -> 刷任务信号（last_signal_at），供完成判定兜底
-        await signalTaskDone();
       }
+      // 【fixedQ 2026-09-06】成功失败都刷信号：失败同样代表工具槽已释放，
+      // 避免 AI 忘调 sky_task_done 后循环只能干等静默兜底；配合 task_quiet_ms 5000->1000 更快放行
+      try { await signalTaskDone(); } catch (e) { /* 忽略，不影响返回值 */ }
       return res;
     } catch (e) {
+      // 【fixedQ】异常路径同样刷信号，保证任务不被卡住
+      try { await signalTaskDone(); } catch (e2) { /* 忽略 */ }
       return { success: false, error: _fmt(e) };
     } finally {
       releaseBusy();
@@ -1838,7 +1836,7 @@ const SkyAuto = (function () {
   let _actionStartTime = null;
   let _pushedIcons = {};
   const _iconDedupWindowMs = 30000;
-  // 【fixedO】互动残留抑制：记录刚完成的互动（标准名+完成时刻），pollAction 20s 窗口内同图标不再投递（动画残留帧误检）
+  // 【fixedO】互动残留抑制：记录刚完成的互动（标准名+完成时刻），pollAction 8s 窗口内同图标不再投递（动画残留帧误检）
   let _lastInteraction = null;
   let _lastScreenCheck = 0; // 息屏检测节流
 
@@ -1846,7 +1844,10 @@ const SkyAuto = (function () {
   async function _isScreenOn() {
     try {
       const out = await _shell('dumpsys power');
-      const m = String(out || '').match(/mWakefulness\s*=\s*(\w+)/);
+      // fixedT：Tools.System.shell 返回对象 {output, exitCode}，String(out) 会变 [object Object] 导致正则永远匹配不到（息屏检测长期失效）
+      const str = (out && typeof out === 'object' && out.output != null)
+        ? String(out.output) : String(out || '');
+      const m = str.match(/mWakefulness\s*=\s*(\w+)/);
       if (!m) return true; // 查询不到 -> 默认亮屏，不误停
       return String(m[1]).toLowerCase() === 'awake';
     } catch (e) {
@@ -2026,7 +2027,7 @@ const SkyAuto = (function () {
     const t = await readTask();
     if (!t || !t.active) return false;
     const now = Date.now();
-    const quietMs = (cfg && cfg.task_quiet_ms != null) ? Number(cfg.task_quiet_ms) : 5000;
+    const quietMs = (cfg && cfg.task_quiet_ms != null) ? Number(cfg.task_quiet_ms) : 1000;
     const timeoutMs = (cfg && cfg.task_timeout_ms != null) ? Number(cfg.task_timeout_ms) : 30000;
     // 1. 显式完成（sky_task_done）
     if (t.done_at && t.done_at >= t.started_at) {
@@ -2065,7 +2066,7 @@ const SkyAuto = (function () {
   // BUG-A 后 wakeAi 采用 fire-and-forget（发出即释放工具槽）；是否收到/何时处理由方案Q 任务队列兜底。
   // K：聊天新消息投递附带的引导——先调 sky_send_text 在游戏内回复用户（通用，无特定人名）
   // 方案Q 2.4：投递模板附加强制指令——做完本批全部动作后调 sky_task_done 显式声明完成
-  const THINK_GUIDANCE = '（简短思考，快速回复。铁律：收到用户的游戏内消息，必须先调用 sky_send_text 在光遇游戏内回复用户，再向 Operit 侧同步。做完本批消息的全部动作（回复/互动/识别/回遇境等）后，务必调用 sky_task_done 声明任务完成。）';
+  const THINK_GUIDANCE = '（简短思考，快速回复。铁律：收到用户的游戏内消息，先判断消息内容——若是互动动作请求（用户要求接受/发起动作），必须先调用 sky_action 执行接受/发起动作，动作完成后再判断是否需要 sky_send_text 回复信息；若是纯聊天消息，则直接 sky_send_text 回复用户（无需等待，投递后直接调用，不会被拦截），再向 Operit 侧同步。最后调用 sky_task_done 释放任务。动作优先，不得先回复信息再执行动作。）';
   // （缺陷3已改为中性推送文案，ACTION_GUIDANCE 不再使用）
   async function wakeAi(message) {
     if (typeof toolCall !== 'function') {
@@ -2335,7 +2336,7 @@ const SkyAuto = (function () {
           if (allIcons.some(function (ic) { return Number(ic.conf) < 50; })) tag.push('低置信');
           const msg = '[光遇自动化] 检出可交互图标：' + parts.join('、') +
             (tag.length ? '（' + tag.join('，') + '）' : '') +
-            '——请 AI 判断是否为用户发起，是则回应，否则忽略。（接受规则：置信度 ≥50% 才接受；动作栏状态（多图标同现）视为未发起，忽略。做完本批动作（回应/拒绝）后请调用 sky_task_done 释放任务。）';
+            '——请 AI 判断是否为用户发起，是则回应，否则忽略。（动作优先：直接调用 sky_action 执行接受/发起动作（无需等待，若被平台拦截则稍等重试，重试基本必成功），动作完成后才判断是否需要回复聊天信息，最后调用 sky_task_done 释放任务；不得先发信息再动作。置信度规则：判断用户发起时置信度 ≥50% 才接受，<50% 忽略；动作栏状态（多图标同现）视为未发起，忽略。用户聊天明确要求接受动作（accept 指令）时，无论置信度多少都接受。）';
           pendingDeliveries.push(makeDelivery('action', msg));
         }
         // 方案Q：放行调度——先做活动任务完成判定（显式/静默/超时/重投递）；

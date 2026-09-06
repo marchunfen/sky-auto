@@ -1,6 +1,6 @@
 # sky_auto ToolPkg（光遇自动化 · 带配置界面）
 
-把 sky_auto 从普通 JS 包升级为 **ToolPkg**：提供「光遇坐标配置」界面（包管理 →「打开配置」），使用者在界面上填自己设备的坐标。等级时长**不开放配置**，按固定标准内建。
+把 sky_auto 从普通 JS 包升级为 **ToolPkg**：提供「光遇坐标配置」界面（包管理 →「打开配置」），使用者（粉丝）在界面上填自己设备的坐标。等级时长**不开放配置**，按固定标准内建。
 
 ## 目录结构
 
@@ -206,6 +206,3 @@ const LEVEL_TIMING = { 1: 300, 2: 500, 3: 750, 4: 1100 }; // ms
 3. `use_package('sky_core')` 激活子包。
 4. `operit_editor:debug_run_sandbox_script` 跑 `main()` 自检；再跑 `sky_read_chat` / `sky_detect` 验证。
 5. 在光遇实际跑一轮：`sky_read_chat → AI 判断 → sky_send_text / sky_action → sky_poll`。
-
-## 下载安装包
-👉 [点此下载 sky_auto.toolpkg（导入 Operit 用的安装包）](https://github.com/marchunfen/sky-auto/releases/download/v1.0/sky_auto.toolpkg)
