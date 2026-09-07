@@ -163,13 +163,20 @@ public class MainActivity extends AppCompatActivity implements ScreenshotService
             }
         });
 
-        Shizuku.addRequestPermissionResultListener(shizukuListener);
+        try {
+            Shizuku.addRequestPermissionResultListener(shizukuListener);
+        } catch (Throwable t) {
+            Log.e(TAG, "注册 Shizuku 监听失败", t);
+        }
         checkPermissions();
     }
 
     @Override
     protected void onDestroy() {
-        Shizuku.removeRequestPermissionResultListener(shizukuListener);
+        try {
+            Shizuku.removeRequestPermissionResultListener(shizukuListener);
+        } catch (Throwable ignored) {
+        }
         hideHud();
         super.onDestroy();
     }
@@ -198,22 +205,31 @@ public class MainActivity extends AppCompatActivity implements ScreenshotService
                     Uri.parse("package:" + getPackageName())), REQUEST_OVERLAY);
             return;
         }
-        // 2. Shizuku 权限
-        if (!Shizuku.pingBinder()) {
-            tvStatus.setText("Shizuku 未运行");
-            Toast.makeText(this, "请先启动 Shizuku 服务（ADB 或 root 方式）", Toast.LENGTH_LONG).show();
-            return;
-        }
-        if (Shizuku.isPreV11()) {
-            tvStatus.setText("Shizuku 版本过旧");
-            Toast.makeText(this, "请升级 Shizuku 到最新版", Toast.LENGTH_LONG).show();
-            return;
-        }
-        if (Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) {
-            tvStatus.setText("正在请求 Shizuku 授权...");
-            Shizuku.requestPermission(REQUEST_SHIZUKU);
-            // 授权回调后用户需再点一次开始
-            Toast.makeText(this, "请在 Shizuku 弹窗中允许本应用", Toast.LENGTH_LONG).show();
+        // 2. Shizuku 权限（包 try-catch，避免个别设备上 Shizuku 未就绪导致闪退）
+        try {
+            if (!Shizuku.pingBinder()) {
+                tvStatus.setText("Shizuku 未运行");
+                Toast.makeText(this, "请先启动 Shizuku 服务（ADB 或 root 方式）", Toast.LENGTH_LONG).show();
+                return;
+            }
+            if (Shizuku.isPreV11()) {
+                tvStatus.setText("Shizuku 版本过旧");
+                Toast.makeText(this, "请升级 Shizuku 到最新版", Toast.LENGTH_LONG).show();
+                return;
+            }
+            if (Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) {
+                tvStatus.setText("正在请求 Shizuku 授权...");
+                Shizuku.requestPermission(REQUEST_SHIZUKU);
+                // 授权回调后用户需再点一次开始
+                Toast.makeText(this, "请在 Shizuku 弹窗中允许本应用", Toast.LENGTH_LONG).show();
+                return;
+            }
+        } catch (Throwable t) {
+            // Shizuku 异常（版本不匹配/服务未就绪等），避免闪退
+            Log.e(TAG, "Shizuku 检查异常", t);
+            tvStatus.setText("Shizuku 异常：" + t.getMessage());
+            Toast.makeText(this, "Shizuku 异常，请检查 Shizuku 是否正常，或重启后重试",
+                    Toast.LENGTH_LONG).show();
             return;
         }
 
@@ -235,9 +251,11 @@ public class MainActivity extends AppCompatActivity implements ScreenshotService
             tvStatus.setText("正在启动...");
 
             showHud();
-        } catch (Exception e) {
-            Log.e(TAG, "start failed", e);
-            tvStatus.setText("启动失败: " + e.getMessage());
+        } catch (Throwable t) {
+            // 捕获所有异常（含 OPPO 上 front service 启动被拒的异常），避免闪退
+            Log.e(TAG, "start failed", t);
+            tvStatus.setText("启动失败: " + t.getMessage());
+            Toast.makeText(this, "启动失败：" + t.getMessage(), Toast.LENGTH_LONG).show();
         }
     }
 
