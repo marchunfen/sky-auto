@@ -140,7 +140,13 @@ public class ScreenshotService extends Service {
 
     private void startForegroundWithNotification() {
         Notification notification = buildNotification("正在准备截图识别...");
-        startForeground(1, notification);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            // Android 10+ 前台服务必须带类型；specialUse 是通用的截图轮询类型
+            startForeground(1, notification,
+                    android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
+        } else {
+            startForeground(1, notification);
+        }
     }
 
     private Notification buildNotification(String text) {
