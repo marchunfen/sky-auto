@@ -3,6 +3,7 @@
 
     <!-- 前台服务（截图轮询） -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- 悬浮窗 HUD 面板 -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
@@ -32,7 +33,12 @@
 
         <service
             android:name=".ScreenshotService"
-            android:exported="false" />
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="screenshot detection polling" />
+        </service>
 
         <!-- Shizuku 授权 Provider -->
         <provider
